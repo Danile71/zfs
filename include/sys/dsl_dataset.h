@@ -33,6 +33,7 @@
 #include <sys/txg.h>
 #include <sys/zio.h>
 #include <sys/bplist.h>
+#include <sys/dsl_pool.h>
 #include <sys/dsl_synctask.h>
 #include <sys/zfs_context.h>
 #include <sys/dsl_deadlist.h>
@@ -242,6 +243,8 @@ typedef struct dsl_dataset {
 	kmutex_t ds_sendstream_lock;
 	list_t ds_sendstreams;
 
+	void *ds_receiver;	/* really a dmu_recv_cookie_t */
+
 	/*
 	 * When in the middle of a resumable receive, tracks how much
 	 * progress we have made.
@@ -316,7 +319,8 @@ typedef struct dsl_dataset_snapshot_arg {
 /* flags for holding the dataset */
 typedef enum ds_hold_flags {
 	DS_HOLD_FLAG_NONE	= 0 << 0,
-	DS_HOLD_FLAG_DECRYPT	= 1 << 0 /* needs access to encrypted data */
+	DS_HOLD_FLAG_DECRYPT	= 1 << 0, /* needs access to encrypted data */
+	DS_HOLD_FLAG_MUST_BE_OPEN = 1 << 1, /* dataset must already be open */
 } ds_hold_flags_t;
 
 int dsl_dataset_hold(struct dsl_pool *dp, const char *name, const void *tag,
@@ -326,11 +330,11 @@ int dsl_dataset_hold_flags(struct dsl_pool *dp, const char *name,
 boolean_t dsl_dataset_try_add_ref(struct dsl_pool *dp, dsl_dataset_t *ds,
     const void *tag);
 int dsl_dataset_create_key_mapping(dsl_dataset_t *ds);
-int dsl_dataset_hold_obj_flags(struct dsl_pool *dp, uint64_t dsobj,
-    ds_hold_flags_t flags, const void *tag, dsl_dataset_t **);
+int dsl_dataset_hold_obj_flags(dsl_pool_t *dp, uint64_t dsobj,
+    ds_hold_flags_t flags, void *tag, dsl_dataset_t **dsp);
 void dsl_dataset_remove_key_mapping(dsl_dataset_t *ds);
-int dsl_dataset_hold_obj(struct dsl_pool *dp, uint64_t dsobj,
-    const void *tag, dsl_dataset_t **);
+int dsl_dataset_hold_obj(dsl_pool_t *dp, uint64_t dsobj, void *tag,
+    dsl_dataset_t **dsp);
 void dsl_dataset_rele_flags(dsl_dataset_t *ds, ds_hold_flags_t flags,
     const void *tag);
 void dsl_dataset_rele(dsl_dataset_t *ds, const void *tag);
@@ -445,6 +449,8 @@ boolean_t dsl_dataset_is_before(dsl_dataset_t *later, dsl_dataset_t *earlier,
 void dsl_dataset_long_hold(dsl_dataset_t *ds, const void *tag);
 void dsl_dataset_long_rele(dsl_dataset_t *ds, const void *tag);
 boolean_t dsl_dataset_long_held(dsl_dataset_t *ds);
+
+int dsl_dataset_sendrecv_cancel_all(spa_t *spa);
 
 int dsl_dataset_clone_swap_check_impl(dsl_dataset_t *clone,
     dsl_dataset_t *origin_head, boolean_t force, void *owner, dmu_tx_t *tx);
